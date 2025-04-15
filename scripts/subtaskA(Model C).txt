@@ -1,0 +1,85 @@
+# === Mount Google Drive ===
+from google.colab import drive
+drive.mount('/content/drive')
+
+# === Load Single Training File ===
+import pandas as pd
+
+train_df = pd.read_csv('/content/drive/MyDrive/train.csv')  # <-- update path if needed
+
+# Drop index if not needed as feature
+train_df = train_df[['text', 'label']]
+
+# === Preprocessing ===
+import re
+from nltk.tokenize import RegexpTokenizer
+from nltk.corpus import stopwords
+import nltk
+nltk.download('stopwords')
+nltk.download('punkt')
+
+def preprocess(text):
+    text = str(text).lower()
+    text = re.sub(r'<.*?>', '', text)
+    text = re.sub(r'http\S+', '', text)
+    text = re.sub(r'[0-9]+', '', text)
+    text = re.sub(r'@\S+', '', text)
+    tokenizer = RegexpTokenizer(r'\w+')
+    tokens = tokenizer.tokenize(text)
+    filtered = [w for w in tokens if w not in stopwords.words('english') and len(w) > 2]
+    return " ".join(filtered)
+
+train_df['text'] = train_df['text'].map(preprocess)
+
+# === Train-Test Split ===
+from sklearn.model_selection import train_test_split
+
+train_data, val_data = train_test_split(train_df, test_size=0.2, random_state=42)
+
+# === Train Transformer (ALBERT) ===
+!pip install simpletransformers -q
+
+from simpletransformers.classification import ClassificationModel
+
+model = ClassificationModel(
+    'albert', 'albert-base-v1',
+    num_labels=2,
+    use_cuda=False,
+    args={
+        'reprocess_input_data': True,
+        'overwrite_output_dir': True,
+        'num_train_epochs': 3,
+        'train_batch_size': 16,
+        'eval_batch_size': 16,
+    }
+)
+
+model.train_model(train_data)
+
+# === Evaluate on Validation Set ===
+preds, _ = model.predict(val_data['text'].tolist())
+val_data['pred'] = preds
+
+from sklearn.metrics import classification_report, confusion_matrix
+print(classification_report(val_data['label'], val_data['pred']))
+
+# === Predict on Evaluation File ===
+eval_df = pd.read_csv('/content/drive/MyDrive/stA_eval.csv')  # <-- update if needed
+eval_df['text'] = eval_df['text'].map(preprocess)
+
+eval_preds, _ = model.predict(eval_df['text'].tolist())
+eval_df['label'] = eval_preds
+
+# === Create 'index' from filename ===
+eval_df['index'] = eval_df['filename'].str.extract(r'subtaskA/(.*)\.jpg')[0]
+
+# === Final Submission Format ===
+submission = eval_df[['index', 'label']].rename(columns={"label": "prediction"})
+
+# === Save to evaloutput.json ===
+import json
+
+with open('/content/evaloutput.json', 'w') as f:
+    json.dump(submission.to_dict(orient='records'), f, indent=2)
+
+print("✅ Submission file saved as evaloutput.json")
