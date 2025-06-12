@@ -1,0 +1,21 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Virtual environment
+venv/
+
+# Logs
+logs/
+
+# Models and checkpoints
+models/
+*.ckpt
+*.pt
+*.bin
+
+data/
+Eval-data
